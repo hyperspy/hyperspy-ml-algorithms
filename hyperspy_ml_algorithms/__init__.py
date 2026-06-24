@@ -37,10 +37,10 @@ _import_mapping = {
     "MLPCA": "estimators.mlpca",
     "ORNMF": "estimators.ornmf",
     "ORPCA": "estimators.rpca",
-    "Orthomax": "estimators._stubs",
+    "Orthomax": "estimators.orthomax",
     "RPCAGoDec": "estimators.rpca",
     "SVDPCA": "estimators.svd_pca",
-    "Whitening": "estimators._stubs",
+    "Whitening": "estimators.whitening",
 }
 
 
