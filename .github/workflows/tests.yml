@@ -11,48 +11,35 @@ jobs:
   test:
     name: ${{ matrix.os }}-py${{ matrix.PYTHON_VERSION }}
     runs-on: ${{ matrix.os }}-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu, macos, windows]
         PYTHON_VERSION: ['3.10', '3.11', '3.12']
 
-    defaults:
-      run:
-        working-directory: hyperspy_ml_algorithms
-
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          fetch-tags: true
 
       - uses: actions/setup-python@v6
-        name: Install Python
         with:
           python-version: ${{ matrix.PYTHON_VERSION }}
-
-      - name: Display version
-        run: |
-          python --version
-          pip --version
 
       - name: Install
         shell: bash
         run: |
-          pip install --upgrade --prefer-binary -e ".[dev]"
+          pip install --upgrade -e ".[dev,sklearn]"
 
-      - name: Pip list
+      - name: Run tests
         run: |
-          pip list
+          pytest hyperspy_ml_algorithms/tests/ -v --tb=short --cov=hyperspy_ml_algorithms --cov-report=xml
 
-      - name: Run test suite
-        run: |
-          pytest -v --tb=short
+      - uses: codecov/codecov-action@v3
 
-      - name: Run lint
+      - name: Lint
         run: |
           pip install ruff
-          ruff check .
-          ruff format --check .
+          ruff check hyperspy_ml_algorithms/
+          ruff format --check hyperspy_ml_algorithms/
