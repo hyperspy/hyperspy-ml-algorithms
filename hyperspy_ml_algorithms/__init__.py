@@ -36,9 +36,9 @@ _import_mapping = {
     "IncrementalSVD": "estimators._stubs",
     "MLPCA": "estimators._stubs",
     "ORNMF": "estimators._stubs",
-    "ORPCA": "estimators._stubs",
+    "ORPCA": "estimators.rpca",
     "Orthomax": "estimators._stubs",
-    "RPCAGoDec": "estimators._stubs",
+    "RPCAGoDec": "estimators.rpca",
     "SVDPCA": "estimators._stubs",
     "Whitening": "estimators._stubs",
 }

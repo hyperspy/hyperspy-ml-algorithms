@@ -16,207 +16,312 @@
 # You should have received a copy of the GNU General Public License
 # along with HyperSpy. If not, see <https://www.gnu.org/licenses/#GPL>.
 
-"""Out-of-core (incremental) SVD via a no-centering subclass of
-:class:`sklearn.decomposition.IncrementalPCA`.
+"""Incremental (streaming) SVD estimator.
 
-:class:`sklearn.decomposition.IncrementalPCA` always subtracts a running mean
-from each batch, which turns the decomposition into a PCA rather than a plain
-SVD.  :class:`ISVD` disables this centering by overriding the ``mean_``
-property so that it always reads back as zeros, making both the
-``partial_fit`` mean-correction step and the ``transform`` mean-shift
-step no-ops while leaving the rest of the sklearn implementation intact.
+Implements the Ross et al. (2008) incremental SVD algorithm [1]_ for
+out-of-core / streaming data.  Data is fed in batches via ``partial_fit``;
+after all batches have been processed, use ``transform`` to project new
+data onto the learned components.
+
+Unlike PCA, no centering is applied — this is a plain SVD decomposition.
+
+References
+----------
+.. [1] D. A. Ross, J. Lim, R.-S. Lin, and M.-H. Yang,
+   "Incremental Learning for Robust Visual Tracking",
+   International Journal of Computer Vision, vol. 77, pp. 125-141, 2008.
 """
 
-import importlib
-
 import numpy as np
-
-SKLEARN_INSTALLED = importlib.util.find_spec("sklearn") is not None
-
-
-def _check_sklearn():
-    if not SKLEARN_INSTALLED:
-        raise ImportError(
-            "ISVD requires scikit-learn. Install it with:  pip install scikit-learn"
-        )
+from array_api_compat import array_namespace
 
 
-if SKLEARN_INSTALLED:
-    from sklearn.decomposition import IncrementalPCA as _IncrementalPCA
+def _svd_flip(U, Vt, u_based_decision=False):
+    """Flip signs of SVD output for deterministic sign convention.
 
-    class ISVD(_IncrementalPCA):
-        """Out-of-core incremental SVD (no centering).
+    Ensures the largest absolute value in each column of U (or row of Vt)
+    is positive.  Equivalent to :func:`sklearn.utils.extmath.svd_flip`.
 
-        A subclass of :class:`sklearn.decomposition.IncrementalPCA` that
-        disables centering so the decomposition computes a plain SVD rather
-        than PCA.  Data is fed in batches via ``partial_fit``; after all
-        batches have been processed, call ``transform`` to obtain the
-        scores.
+    Parameters
+    ----------
+    U : ndarray, shape (n_samples, n_components)
+        Left singular vectors.
+    Vt : ndarray, shape (n_components, n_features)
+        Right singular vectors (transposed).
+    u_based_decision : bool, default False
+        If True, base sign decision on columns of U; otherwise on rows of Vt.
 
-        The centering is disabled at two levels.  The ``mean_`` property
-        always returns zeros, which neutralises the mean-shift in
-        sklearn's ``transform``.  The ``partial_fit`` method is completely
-        overridden to implement plain incremental SVD — data is never
-        mean-subtracted during fitting, and no mean-correction term is
-        added between batches.
+    Returns
+    -------
+    U : ndarray
+        Sign-flipped left singular vectors.
+    Vt : ndarray
+        Sign-flipped right singular vectors (transposed).
+    """
+    if u_based_decision:
+        max_abs_cols = np.argmax(np.abs(U), axis=0)
+        signs = np.sign(U[max_abs_cols, np.arange(U.shape[1])])
+    else:
+        max_abs_rows = np.argmax(np.abs(Vt), axis=1)
+        signs = np.sign(Vt[np.arange(Vt.shape[0]), max_abs_rows])
+    U *= signs[np.newaxis, :]
+    Vt *= signs[:, np.newaxis]
+    return U, Vt
+
+
+class IncrementalSVD:
+    """Incremental (streaming) SVD estimator (no centering).
+
+    Computes a plain SVD incrementally by feeding data in batches via
+    ``partial_fit``.  After all batches have been processed, the learned
+    components and singular values are available as attributes.
+
+    Uses the algorithm of Ross et al. (2008): each new batch is stacked
+    with the previous top-*k* subspace (scaled by singular values), then
+    a rank-*k* truncated SVD is computed on the stacked matrix to merge
+    the new data into the existing subspace.  No mean centering is ever
+    applied, so the decomposition is an SVD, not PCA.
+
+    Parameters
+    ----------
+    n_components : int or None, default None
+        Number of singular components to compute.  If None, defaults to
+        ``min(n_samples, n_features)`` on the first batch.
+    num_chunks : int or None, default None
+        Number of chunks to split the data into when calling ``fit()``.
+        If None, a heuristic is used based on the data size.  Ignored
+        when using ``partial_fit`` directly.
+
+    Attributes
+    ----------
+    components_ : ndarray, shape (n_components, n_features)
+        Right singular vectors (rows are components).
+    singular_values_ : ndarray, shape (n_components,)
+        Singular values in descending order.
+    explained_variance_ : ndarray, shape (n_components,)
+        Variance explained by each component (``S² / N``).
+    explained_variance_ratio_ : ndarray, shape (n_components,)
+        Fraction of top-*k* variance captured by each component
+        (``S² / sum(S²)``).
+    mean_ : ndarray, shape (n_features,)
+        Always zeros — no centering is applied.  Provided for API
+        compatibility with estimators that do centre.
+    n_samples_seen_ : int
+        Total number of samples processed across all ``partial_fit`` calls.
+    noise_variance_ : float
+        Mean of discarded singular values squared, divided by
+        ``n_samples_seen_`` (if any singular values were discarded).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from hyperspy_ml_algorithms import IncrementalSVD
+    >>> rng = np.random.default_rng(42)
+    >>> X = rng.standard_normal((200, 50))
+    >>> est = IncrementalSVD(n_components=3)
+    >>> for chunk in np.array_split(X, 4):
+    ...     est.partial_fit(chunk)
+    >>> components = est.components_.T       # shape (n_features, n_components)
+    >>> scores = est.transform(X)            # shape (n_samples, n_components)
+    """
+
+    def __init__(self, n_components=None, num_chunks=None):
+        self.n_components = n_components
+        self.num_chunks = num_chunks
+        self.components_ = None
+        self.singular_values_ = None
+        self.n_samples_seen_ = 0
+
+    def fit(self, X, y=None):
+        """Fit the incremental SVD model to X.
+
+        Splits the data into chunks and calls ``partial_fit`` on each.
+        Supports both numpy and dask arrays.
 
         Parameters
         ----------
-        n_components : int
-            Number of singular components to compute.
-        **kwargs
-            Additional keyword arguments forwarded to
-            :class:`sklearn.decomposition.IncrementalPCA`.
+        X : array-like, shape (n_samples, n_features)
+            Training data.  Can be a numpy array or a dask array.
+        y : Ignored
+            Exists for API compatibility.
 
-        Attributes
-        ----------
-        singular_values_ : ndarray
-            Singular values after fitting, shape ``(n_components,)``.
-        components_ : ndarray
-            Right singular vectors (rows are components), shape
-            ``(n_components, n_features)``.
-        explained_variance_ : ndarray
-            Approximate explained variance as computed by sklearn's
-            IncrementalPCA (``S² / (n_samples - 1)``).  Note that this
-            uses Bessel's correction and may be inconsistent with HyperSpy's
-            standard ``S² / N`` formula used by all other decomposition
-            paths.  The ``LazySignal.decomposition`` method overrides this
-            attribute for the ``learning_results`` output.
-        explained_variance_ratio_ : ndarray
-            Fraction of the top-``n_components`` variance captured by each
-            component, computed as ``ev / ev.sum()`` — the same
-            normalisation used by HyperSpy's eager and lazy SVD paths.
-            (The ``LazySignal.decomposition`` method recomputes this
-            independently from ``obj.singular_values_``, so the
-            attribute on the ISVD object is used only for standalone
-            ISVD usage.)
-
-        Examples
-        --------
-        >>> import numpy as np
-        >>> from hyperspy.learn.incremental_svd import ISVD
-        >>> X = np.random.randn(200, 50)
-        >>> obj = ISVD(n_components=3)
-        >>> for chunk in np.array_split(X, 4):
-        ...     obj.partial_fit(chunk)
-        >>> components = obj.components_.T       # shape (n_features, n_components)
-        >>> scores = obj.transform(X)            # shape (n_samples, n_components)
+        Returns
+        -------
+        self : IncrementalSVD
+            The fitted estimator.
         """
+        # Reset state for a fresh fit.
+        self.components_ = None
+        self.singular_values_ = None
+        self.n_samples_seen_ = 0
+        if hasattr(self, "_mean"):
+            del self._mean
 
-        def partial_fit(self, X, y=None, check_input=False):
-            """Fit one batch without centering (plain incremental SVD).
+        n_samples = X.shape[0]
 
-            Overrides :meth:`sklearn.decomposition.IncrementalPCA.partial_fit`
-            to skip all centering and mean-correction steps.  Data is never
-            mean-subtracted inside this method, so the decomposition is a
-            plain SVD rather than PCA.
+        if self.num_chunks is None:
+            n_chunks = max(1, min(max(4, n_samples // 100), 50))
+        else:
+            n_chunks = self.num_chunks
 
-            Parameters
-            ----------
-            X : ndarray, shape (n_samples, n_features)
-                Batch of training data.
-            y : Ignored
-                Exists for API compatibility with sklearn.
-            check_input : bool
-                Ignored (HyperSpy always passes ``False``).
+        # Detect dask arrays and iterate blocks.
+        if hasattr(X, "blocks"):
+            for i in range(n_chunks):
+                start = i * n_samples // n_chunks
+                end = (i + 1) * n_samples // n_chunks if i < n_chunks - 1 else n_samples
+                chunk = np.asarray(X[start:end])
+                self.partial_fit(chunk)
+        else:
+            for chunk in np.array_split(np.asarray(X), n_chunks):
+                self.partial_fit(chunk)
 
-            Returns
-            -------
-            self : ISVD
-                The fitted estimator.
-            """
-            from scipy import linalg
-            from sklearn.utils.extmath import svd_flip
+        return self
 
-            n_samples, n_features = X.shape
+    def partial_fit(self, X_chunk, y=None):
+        """Fit one batch without centering (plain incremental SVD).
 
-            # --- first-call initialization ---
-            if not hasattr(self, "n_samples_seen_"):
-                self.n_samples_seen_ = 0
+        Implements the Ross et al. (2008) rank-1 update algorithm.
+        Data is never mean-subtracted, so the decomposition is a plain
+        SVD rather than PCA.
 
-                if self.n_components is None:
-                    self.n_components_ = min(n_samples, n_features)
-                elif self.n_components > n_features:
-                    raise ValueError(
-                        f"n_components={self.n_components} must be less "
-                        f"than or equal to n_features={n_features}"
-                    )
-                elif self.n_components > n_samples:
-                    raise ValueError(
-                        f"n_components={self.n_components} must be less "
-                        f"than or equal to the batch number of samples "
-                        f"{n_samples} for the first partial_fit call."
-                    )
-                else:
-                    self.n_components_ = self.n_components
+        Parameters
+        ----------
+        X_chunk : ndarray, shape (n_samples, n_features)
+            Batch of training data.
+        y : Ignored
+            Exists for API compatibility.
 
-            elif self.components_ is not None:
-                if self.components_.shape[0] != self.n_components_:
-                    raise ValueError(
-                        f"n_components has changed from "
-                        f"{self.components_.shape[0]} to "
-                        f"{self.n_components_} between calls to "
-                        f"partial_fit!"
-                    )
+        Returns
+        -------
+        self : IncrementalSVD
+            The fitted estimator.
+        """
+        from scipy import linalg
 
-            # --- build the matrix for SVD ---
-            if self.n_samples_seen_ == 0:
-                # First batch: plain SVD of raw (uncentered) data.
-                X_stacked = X
+        xp = array_namespace(X_chunk)
+
+        n_samples, n_features = X_chunk.shape
+
+        # --- first-call initialization ---
+        if self.components_ is None:
+            self.n_samples_seen_ = 0
+
+            if self.n_components is None:
+                self.n_components_ = min(n_samples, n_features)
+            elif self.n_components > n_features:
+                raise ValueError(
+                    f"n_components={self.n_components} must be less "
+                    f"than or equal to n_features={n_features}"
+                )
+            elif self.n_components > n_samples:
+                raise ValueError(
+                    f"n_components={self.n_components} must be less "
+                    f"than or equal to the batch number of samples "
+                    f"{n_samples} for the first partial_fit call."
+                )
             else:
-                # Subsequent batch: stack previous top-k subspace (scaled
-                # by singular values) with the new raw batch — the Ross
-                # et al. (2008) incremental SVD algorithm, without
-                # centering or mean-correction.
-                prev = self.singular_values_.reshape((-1, 1)) * self.components_
-                X_stacked = np.vstack([prev, X])
+                self.n_components_ = self.n_components
 
-            U, S, Vt = linalg.svd(X_stacked, full_matrices=False, check_finite=False)
-            U, Vt = svd_flip(U, Vt, u_based_decision=False)
+        elif self.components_.shape[0] != self.n_components_:
+            raise ValueError(
+                f"n_components has changed from "
+                f"{self.components_.shape[0]} to "
+                f"{self.n_components_} between calls to "
+                f"partial_fit!"
+            )
 
-            self.n_samples_seen_ += n_samples
-            k = self.n_components_
-            self.components_ = Vt[:k]
-            self.singular_values_ = S[:k]
+        # --- build the matrix for SVD ---
+        if self.n_samples_seen_ == 0:
+            # First batch: plain SVD of raw (uncentered) data.
+            X_stacked = X_chunk
+        else:
+            # Subsequent batch: stack previous top-k subspace (scaled
+            # by singular values) with the new raw batch — the Ross
+            # et al. (2008) incremental SVD algorithm, without
+            # centering or mean-correction.
+            prev = self.singular_values_.reshape((-1, 1)) * self.components_
+            X_stacked = xp.concat([prev, X_chunk], axis=0)
 
-            # --- sklearn-compatible explained_variance_ (S² / (N-1)) ---
-            n_total = self.n_samples_seen_
-            self.explained_variance_ = (S[:k] ** 2) / (n_total - 1)
+        # scipy.linalg.svd operates on numpy arrays only.
+        U, S, Vt = linalg.svd(
+            np.asarray(X_stacked), full_matrices=False, check_finite=False
+        )
+        U, Vt = _svd_flip(U, Vt, u_based_decision=False)
 
-            # --- HyperSpy convention explained_variance_ratio_ ---
-            # ev / ev.sum()  (the lazy.py decomposition code overrides
-            # these attributes anyway, so this is mainly for standalone
-            # ISVD usage and test compatibility.)
-            top_k_ev = S[:k] ** 2
-            self.explained_variance_ratio_ = top_k_ev / top_k_ev.sum()
+        self.n_samples_seen_ += n_samples
+        k = self.n_components_
+        self.components_ = Vt[:k]
+        self.singular_values_ = S[:k]
 
-            if k not in (n_samples, n_features):
-                self.noise_variance_ = (S[k:] ** 2).mean() / (n_total - 1)
-            else:
-                self.noise_variance_ = 0.0
+        # --- explained_variance_ (S² / N) ---
+        n_total = self.n_samples_seen_
+        self.explained_variance_ = (S[:k] ** 2) / n_total
 
-            self.mean_ = np.zeros(n_features)
+        # --- explained_variance_ratio_ (S² / sum(S²) for top-k) ---
+        top_k_ev = S[:k] ** 2
+        self.explained_variance_ratio_ = top_k_ev / top_k_ev.sum()
 
-            return self
+        if k not in (n_samples, n_features):
+            self.noise_variance_ = (S[k:] ** 2).mean() / n_total
+        else:
+            self.noise_variance_ = 0.0
 
-        @property
-        def mean_(self):
-            return self.__dict__.get("_isvd_mean", 0.0)
+        self._mean = xp.zeros(n_features)
 
-        @mean_.setter
-        def mean_(self, value):
-            # sklearn initialises mean_ to the scalar 0.0 on first call;
-            # on subsequent calls it passes a float array.  We always store
-            # zeros so that centering has no effect.
-            if np.isscalar(value):
-                self.__dict__["_isvd_mean"] = value
-            else:
-                self.__dict__["_isvd_mean"] = np.zeros_like(value)
+        return self
 
-else:
+    def transform(self, X):
+        """Project X onto the learned components.
 
-    class ISVD:  # type: ignore[no-redef]
-        """Stub that raises ``ImportError`` on instantiation when scikit-learn is not installed."""
+        Parameters
+        ----------
+        X : array-like, shape (n_samples, n_features)
+            Data to project.  Can be a numpy array or a dask array.
 
-        def __init__(self, *args, **kwargs):
-            _check_sklearn()
+        Returns
+        -------
+        scores : ndarray, shape (n_samples, n_components)
+            Projected data (scores).  Type matches the input (numpy or
+            dask).
+        """
+        # X @ components_.T works for numpy, dask, cupy, and torch tensors
+        # without needing array_namespace dispatch.
+        return X @ self.components_.T
+
+    def fit_transform(self, X, y=None):
+        """Fit the model and transform X.
+
+        Parameters
+        ----------
+        X : array-like, shape (n_samples, n_features)
+            Training data.
+        y : Ignored
+            Exists for API compatibility.
+
+        Returns
+        -------
+        scores : ndarray, shape (n_samples, n_components)
+            Projected data (scores).
+        """
+        self.fit(X)
+        return self.transform(X)
+
+    @property
+    def mean_(self):
+        """Mean vector (always zeros — no centering is applied).
+
+        Returns a scalar ``0.0`` before any ``partial_fit`` call, and
+        a zeros array of shape ``(n_features,)`` afterward.
+        """
+        return self.__dict__.get("_mean", 0.0)
+
+    @mean_.setter
+    def mean_(self, value):
+        # Allow ``mean_ = 0.0`` (sklearn init convention) and
+        # ``mean_ = array(...)`` (post-fit assignment).  Always store
+        # zeros so that centering has no effect.
+        xp = array_namespace(np.asarray(value))
+        if xp.ndim(np.asarray(value)) == 0:
+            self.__dict__["_mean"] = float(value)
+        else:
+            self.__dict__["_mean"] = xp.zeros_like(np.asarray(value))
