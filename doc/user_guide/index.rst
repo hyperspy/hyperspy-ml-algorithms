@@ -97,9 +97,30 @@ acceleration with CuPy or PyTorch without any code changes::
 
 .. note::
 
-   Not all estimators support all array backends. The SVD-based algorithms
-   (SVDPCA, MLPCA) have the best GPU support. ORNMF and RPCAGoDec operate
-   primarily on NumPy arrays.
+   Multi-backend support is not uniform across estimators. The following
+   table lists which array backends each estimator accepts and whether the
+   computation runs on the original device (GPU) or is performed on the CPU:
+
+   ========================  ================================================
+   Estimator                 Supported array backends
+   ========================  ================================================
+   SVDPCA                    NumPy, CuPy, PyTorch (GPU accelerated)
+   Whitening                 NumPy, CuPy, PyTorch (GPU accelerated)
+   Orthomax                  NumPy, CuPy, PyTorch (GPU accelerated) [#f1]_
+   MLPCA                     NumPy, CuPy, PyTorch (computed on CPU)
+   IncrementalSVD            NumPy, Dask (computed on CPU)
+   ORPCA                     NumPy only
+   RPCAGoDec                 NumPy only
+   ORNMF                     NumPy only
+   ========================  ================================================
+
+   .. [#f1] The default varimax path (:math:`0 \le \gamma \le 1`) is
+      GPU-enabled; other ``gamma`` values fall back to a NumPy-only
+      bivariate rotation.
+
+   Passing a CuPy or PyTorch array to a CPU-only estimator will either
+   convert the data to NumPy internally or raise an error, so these
+   estimators should be used with NumPy arrays only.
 
 Estimator Gallery
 =================
