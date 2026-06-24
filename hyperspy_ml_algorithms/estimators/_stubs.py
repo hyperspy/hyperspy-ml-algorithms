@@ -28,27 +28,8 @@ __all__ = [
     "ORPCA",
     "Orthomax",
     "RPCAGoDec",
-    "SVDPCA",
     "Whitening",
 ]
-
-
-class SVDPCA:
-    """SVD-based PCA estimator — stub for Task 3."""
-
-    def __init__(self, n_components=None, svd_solver="auto", centre=None):
-        self.n_components = n_components
-        self.svd_solver = svd_solver
-        self.centre = centre
-
-    def fit(self, X, y=None):
-        raise NotImplementedError("Refactor in task 3")
-
-    def transform(self, X):
-        raise NotImplementedError("Refactor in task 3")
-
-    def fit_transform(self, X, y=None):
-        raise NotImplementedError("Refactor in task 3")
 
 
 class ORPCA:
