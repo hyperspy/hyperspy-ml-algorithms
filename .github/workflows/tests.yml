@@ -22,7 +22,7 @@ jobs:
             PYTHON_VERSION: '3.10'
             LABEL: -oldest
             OLDEST_SUPPORTED_VERSION: true
-            DEPENDENCIES: numpy==1.26.0 scipy==1.10.0
+            DEPENDENCIES: numpy==1.25.0 scipy==1.10.0
 
     steps:
       - uses: actions/checkout@v6

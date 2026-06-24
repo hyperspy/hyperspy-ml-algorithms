@@ -140,7 +140,7 @@ def _solveproj(v, W, lambda1, kappa, xp, h=None, e=None, vmax=None):
 
     # Use xp for the norm; W is always numpy so wrap it
     W_xp = xp.asarray(W)
-    eta = kappa / float(xp.linalg.matrix_norm(W_xp) ** 2)
+    eta = kappa / float(xp.linalg.norm(W_xp) ** 2)
 
     maxiter = int(1e6)
     iters = 0
