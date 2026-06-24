@@ -27,31 +27,11 @@ No HyperSpy dependencies — only NumPy used for type hints.
 
 __all__ = [
     "IncrementalSVD",
-    "ORNMF",
     "ORPCA",
     "Orthomax",
     "RPCAGoDec",
-    "SVDPCA",
     "Whitening",
 ]
-
-
-class SVDPCA:
-    """SVD-based PCA estimator — stub for Task 3."""
-
-    def __init__(self, n_components=None, svd_solver="auto", centre=None):
-        self.n_components = n_components
-        self.svd_solver = svd_solver
-        self.centre = centre
-
-    def fit(self, X, y=None):
-        raise NotImplementedError("Refactor in task 3")
-
-    def transform(self, X):
-        raise NotImplementedError("Refactor in task 3")
-
-    def fit_transform(self, X, y=None):
-        raise NotImplementedError("Refactor in task 3")
 
 
 class ORPCA:
@@ -90,27 +70,6 @@ class RPCAGoDec:
 
     def fit_transform(self, X, y=None):
         raise NotImplementedError("Refactor in task 5")
-
-
-class ORNMF:
-    """Online Robust NMF estimator — stub for Task 6."""
-
-    def __init__(self, n_components=None, batch_size=20, max_iter=100):
-        self.n_components = n_components
-        self.batch_size = batch_size
-        self.max_iter = max_iter
-
-    def fit(self, X, y=None):
-        raise NotImplementedError("Refactor in task 6")
-
-    def transform(self, X):
-        raise NotImplementedError("Refactor in task 6")
-
-    def fit_transform(self, X, y=None):
-        raise NotImplementedError("Refactor in task 6")
-
-    def partial_fit(self, X_chunk):
-        raise NotImplementedError("Refactor in task 6")
 
 
 class IncrementalSVD:

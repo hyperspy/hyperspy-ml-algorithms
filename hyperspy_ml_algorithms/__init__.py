@@ -33,13 +33,13 @@ __all__ = [
 
 # mapping following the pattern: from value import key
 _import_mapping = {
-    "IncrementalSVD": "estimators._stubs",
-    "MLPCA": "estimators._stubs",
-    "ORNMF": "estimators._stubs",
+    "IncrementalSVD": "estimators.incremental_svd",
+    "MLPCA": "estimators.mlpca",
+    "ORNMF": "estimators.ornmf",
     "ORPCA": "estimators.rpca",
     "Orthomax": "estimators._stubs",
     "RPCAGoDec": "estimators.rpca",
-    "SVDPCA": "estimators._stubs",
+    "SVDPCA": "estimators.svd_pca",
     "Whitening": "estimators._stubs",
 }
 
