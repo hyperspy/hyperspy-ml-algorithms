@@ -105,12 +105,12 @@ acceleration with CuPy or PyTorch without any code changes::
    Estimator                 Supported array backends
    ========================  ================================================
    SVDPCA                    NumPy, CuPy, PyTorch (GPU accelerated)
+   IncrementalSVD            NumPy, CuPy, PyTorch (GPU accelerated)
    Whitening                 NumPy, CuPy, PyTorch (GPU accelerated)
    Orthomax                  NumPy, CuPy, PyTorch (GPU accelerated) [#f1]_
    MLPCA                     NumPy, CuPy, PyTorch (computed on CPU)
-   IncrementalSVD            NumPy, Dask (computed on CPU)
+   RPCAGoDec                 NumPy, CuPy, PyTorch (GPU accelerated)
    ORPCA                     NumPy only
-   RPCAGoDec                 NumPy only
    ORNMF                     NumPy only
    ========================  ================================================
 
@@ -118,9 +118,10 @@ acceleration with CuPy or PyTorch without any code changes::
       GPU-enabled; other ``gamma`` values fall back to a NumPy-only
       bivariate rotation.
 
-   Passing a CuPy or PyTorch array to a CPU-only estimator will either
-   convert the data to NumPy internally or raise an error, so these
-   estimators should be used with NumPy arrays only.
+   ``MLPCA`` accepts CuPy/PyTorch arrays but performs its SVD on the CPU,
+   so it should be treated as a CPU estimator unless you specifically need
+   array-namespace compatibility.  ``ORPCA`` and ``ORNMF`` do not support
+   CuPy/PyTorch inputs and should be used with NumPy arrays only.
 
 Estimator Gallery
 =================

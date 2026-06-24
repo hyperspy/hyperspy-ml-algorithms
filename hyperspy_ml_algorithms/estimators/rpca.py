@@ -681,8 +681,9 @@ class RPCAGoDec:
 
         Parameters
         ----------
-        X : ndarray of shape (n_samples, n_features)
-            Training data.
+        X : array-like of shape (n_samples, n_features)
+            Training data.  NumPy, CuPy, and PyTorch arrays are accepted;
+            the computation runs on the corresponding device.
         y : Ignored
             Not used; present for API consistency.
 
@@ -691,7 +692,6 @@ class RPCAGoDec:
         self : RPCAGoDec
             Fitted estimator.
         """
-        X = np.asarray(X)
         self._fit_godec(X)
         return self
 
@@ -700,17 +700,17 @@ class RPCAGoDec:
 
         Parameters
         ----------
-        X : ndarray of shape (n_samples, n_features)
+        X : array-like of shape (n_samples, n_features)
             Data to project.
 
         Returns
         -------
-        scores : ndarray of shape (n_samples, rank)
-            Scores (projections) of *X* in the component space.
+        scores : array of shape (n_samples, rank)
+            Scores (projections) of *X* in the component space.  The
+            return type matches the input array backend.
         """
         if self.components_ is None:
             raise ValueError("Model has not been fitted yet. Call fit() first.")
-        X = np.asarray(X)
         return X @ self.components_.T
 
     def fit_transform(self, X, y=None):
@@ -812,12 +812,15 @@ class RPCAGoDec:
         random_state = _check_random_state(self.random_state)
 
         for itr in range(int(self.max_iter)):
-            # Bilateral random projection
+            # Bilateral random projection.  The projection matrix is small
+            # relative to L, so we generate it on the CPU and transfer it to
+            # the active backend to preserve the caller's random_state.
             Y2 = random_state.normal(size=(n, self.rank))
+            Y2 = xp.asarray(Y2, dtype=L.dtype, device=getattr(L, "device", None))
             for _ in range(self.power + 1):
                 Y2 = L.T @ (L @ Y2)
 
-            Q, _ = scipy.linalg.qr(np.asarray(Y2), mode="economic")
+            Q, _ = xp.linalg.qr(Y2, mode="reduced")
 
             # Estimate low-rank and sparse components
             Lnew = (L @ Q) @ Q.T
@@ -839,9 +842,8 @@ class RPCAGoDec:
         Xhat = L
         Ehat = E
 
-        # Final SVD (scipy operates on numpy arrays).
-        Xhat_np = np.asarray(Xhat)
-        U, S, Vh = scipy.linalg.svd(Xhat_np, full_matrices=False)
+        # Final SVD through the array namespace stays on the input device.
+        U, S, Vh = xp.linalg.svd(Xhat, full_matrices=False)
 
         # Truncate and zero-out numerical noise.
         S[self.rank :] = 0.0
@@ -850,7 +852,7 @@ class RPCAGoDec:
         # Xhat has shape (n_features, n_samples); its SVD is U @ diag(S) @ Vh.
         # The right singular vectors of Xhat.T (n_samples, n_features) are U.T,
         # so components_ = U.T[:rank, :] has shape (rank, n_features).
-        self.low_rank_ = Xhat_np.T
-        self.sparse_ = np.asarray(Ehat).T
+        self.low_rank_ = Xhat.T
+        self.sparse_ = Ehat.T
         self.components_ = U.T[: self.rank, :]
         self.singular_values_ = S[: self.rank]

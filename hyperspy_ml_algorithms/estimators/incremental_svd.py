@@ -41,31 +41,34 @@ def _svd_flip(U, Vt, u_based_decision=False):
 
     Ensures the largest absolute value in each column of U (or row of Vt)
     is positive.  Equivalent to :func:`sklearn.utils.extmath.svd_flip`.
+    Works with any array backend detected by ``array_namespace``.
 
     Parameters
     ----------
-    U : ndarray, shape (n_samples, n_components)
+    U : array, shape (n_samples, n_components)
         Left singular vectors.
-    Vt : ndarray, shape (n_components, n_features)
+    Vt : array, shape (n_components, n_features)
         Right singular vectors (transposed).
     u_based_decision : bool, default False
         If True, base sign decision on columns of U; otherwise on rows of Vt.
 
     Returns
     -------
-    U : ndarray
+    U : array
         Sign-flipped left singular vectors.
-    Vt : ndarray
+    Vt : array
         Sign-flipped right singular vectors (transposed).
     """
+    xp = array_namespace(U, Vt)
     if u_based_decision:
-        max_abs_cols = np.argmax(np.abs(U), axis=0)
-        signs = np.sign(U[max_abs_cols, np.arange(U.shape[1])])
+        max_abs_cols = xp.argmax(xp.abs(U), axis=0)
+        signs = xp.sign(U[max_abs_cols, xp.arange(U.shape[1])])
     else:
-        max_abs_rows = np.argmax(np.abs(Vt), axis=1)
-        signs = np.sign(Vt[np.arange(Vt.shape[0]), max_abs_rows])
-    U *= signs[np.newaxis, :]
-    Vt *= signs[:, np.newaxis]
+        max_abs_rows = xp.argmax(xp.abs(Vt), axis=1)
+        signs = xp.sign(Vt[xp.arange(Vt.shape[0]), max_abs_rows])
+    signs = xp.astype(signs, U.dtype)
+    U = U * xp.expand_dims(signs, axis=0)
+    Vt = Vt * xp.expand_dims(signs, axis=1)
     return U, Vt
 
 
@@ -94,16 +97,16 @@ class IncrementalSVD:
 
     Attributes
     ----------
-    components_ : ndarray, shape (n_components, n_features)
+    components_ : array, shape (n_components, n_features)
         Right singular vectors (rows are components).
-    singular_values_ : ndarray, shape (n_components,)
+    singular_values_ : array, shape (n_components,)
         Singular values in descending order.
-    explained_variance_ : ndarray, shape (n_components,)
+    explained_variance_ : array, shape (n_components,)
         Variance explained by each component (``S² / N``).
-    explained_variance_ratio_ : ndarray, shape (n_components,)
+    explained_variance_ratio_ : array, shape (n_components,)
         Fraction of top-*k* variance captured by each component
         (``S² / sum(S²)``).
-    mean_ : ndarray, shape (n_features,)
+    mean_ : array, shape (n_features,)
         Always zeros — no centering is applied.  Provided for API
         compatibility with estimators that do centre.
     n_samples_seen_ : int
@@ -136,12 +139,12 @@ class IncrementalSVD:
         """Fit the incremental SVD model to X.
 
         Splits the data into chunks and calls ``partial_fit`` on each.
-        Supports both numpy and dask arrays.
+        Supports NumPy, CuPy, PyTorch, and Dask arrays.
 
         Parameters
         ----------
         X : array-like, shape (n_samples, n_features)
-            Training data.  Can be a numpy array or a dask array.
+            Training data.  Can be a NumPy, CuPy, PyTorch, or Dask array.
         y : Ignored
             Exists for API compatibility.
 
@@ -164,7 +167,8 @@ class IncrementalSVD:
         else:
             n_chunks = self.num_chunks
 
-        # Detect dask arrays and iterate blocks.
+        # Detect dask arrays and iterate blocks, materialising each chunk
+        # as a NumPy array.
         if hasattr(X, "blocks"):
             for i in range(n_chunks):
                 start = i * n_samples // n_chunks
@@ -172,8 +176,10 @@ class IncrementalSVD:
                 chunk = np.asarray(X[start:end])
                 self.partial_fit(chunk)
         else:
-            for chunk in np.array_split(np.asarray(X), n_chunks):
-                self.partial_fit(chunk)
+            for i in range(n_chunks):
+                start = i * n_samples // n_chunks
+                end = (i + 1) * n_samples // n_chunks if i < n_chunks - 1 else n_samples
+                self.partial_fit(X[start:end])
 
         return self
 
@@ -186,8 +192,9 @@ class IncrementalSVD:
 
         Parameters
         ----------
-        X_chunk : ndarray, shape (n_samples, n_features)
-            Batch of training data.
+        X_chunk : array-like, shape (n_samples, n_features)
+            Batch of training data.  Can be a NumPy, CuPy, PyTorch, or
+            materialised Dask array.
         y : Ignored
             Exists for API compatibility.
 
@@ -196,8 +203,6 @@ class IncrementalSVD:
         self : IncrementalSVD
             The fitted estimator.
         """
-        from scipy import linalg
-
         xp = array_namespace(X_chunk)
 
         n_samples, n_features = X_chunk.shape
@@ -242,10 +247,9 @@ class IncrementalSVD:
             prev = self.singular_values_.reshape((-1, 1)) * self.components_
             X_stacked = xp.concat([prev, X_chunk], axis=0)
 
-        # scipy.linalg.svd operates on numpy arrays only.
-        U, S, Vt = linalg.svd(
-            np.asarray(X_stacked), full_matrices=False, check_finite=False
-        )
+        # SVD through the array namespace stays on the input device (NumPy,
+        # CuPy, or PyTorch).
+        U, S, Vt = xp.linalg.svd(X_stacked, full_matrices=False)
         U, Vt = _svd_flip(U, Vt, u_based_decision=False)
 
         self.n_samples_seen_ += n_samples
@@ -276,15 +280,14 @@ class IncrementalSVD:
         Parameters
         ----------
         X : array-like, shape (n_samples, n_features)
-            Data to project.  Can be a numpy array or a dask array.
+            Data to project.  Can be a NumPy, CuPy, PyTorch, or Dask array.
 
         Returns
         -------
-        scores : ndarray, shape (n_samples, n_components)
-            Projected data (scores).  Type matches the input (numpy or
-            dask).
+        scores : array, shape (n_samples, n_components)
+            Projected data (scores).  Type matches the input backend.
         """
-        # X @ components_.T works for numpy, dask, cupy, and torch tensors
+        # X @ components_.T works for NumPy, CuPy, PyTorch, and Dask arrays
         # without needing array_namespace dispatch.
         return X @ self.components_.T
 
@@ -319,9 +322,10 @@ class IncrementalSVD:
     def mean_(self, value):
         # Allow ``mean_ = 0.0`` (sklearn init convention) and
         # ``mean_ = array(...)`` (post-fit assignment).  Always store
-        # zeros so that centering has no effect.
-        xp = array_namespace(np.asarray(value))
-        if xp.ndim(np.asarray(value)) == 0:
+        # zeros so that centering has no effect, preserving the input
+        # array backend.
+        if np.asarray(value).ndim == 0:
             self.__dict__["_mean"] = float(value)
         else:
-            self.__dict__["_mean"] = xp.zeros_like(np.asarray(value))
+            xp = array_namespace(value)
+            self.__dict__["_mean"] = xp.zeros_like(xp.asarray(value))

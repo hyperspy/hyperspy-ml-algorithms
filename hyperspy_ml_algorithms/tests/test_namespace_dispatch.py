@@ -209,6 +209,32 @@ class TestCuPyNamespace:
         with pytest.raises(ValueError):
             array_namespace(a, b)
 
+    def test_incremental_svd_cupy(self):
+        import cupy as cp
+
+        from hyperspy_ml_algorithms import IncrementalSVD
+
+        data = np.random.RandomState(42).random((77, 13))
+        X = cp.asarray(data)
+        est = IncrementalSVD(n_components=5).fit(X)
+        assert est.components_.shape == (5, 13)
+        assert isinstance(est.components_, cp.ndarray)
+        scores = est.transform(X)
+        assert scores.shape == (77, 5)
+
+    def test_rpca_godec_cupy(self):
+        import cupy as cp
+
+        from hyperspy_ml_algorithms import RPCAGoDec
+
+        data = np.random.RandomState(42).random((77, 13))
+        X = cp.asarray(data)
+        est = RPCAGoDec(rank=5).fit(X)
+        assert est.components_.shape == (5, 13)
+        assert isinstance(est.components_, cp.ndarray)
+        scores = est.transform(X)
+        assert scores.shape == (77, 5)
+
 
 # ===================================================================
 # PyTorch dispatch (optional)
@@ -241,3 +267,27 @@ class TestTorchNamespace:
         b = torch.tensor([3.0, 4.0])
         with pytest.raises(ValueError):
             array_namespace(a, b)
+
+    def test_incremental_svd_torch(self):
+        import torch
+
+        from hyperspy_ml_algorithms import IncrementalSVD
+
+        data = torch.rand(77, 13)
+        est = IncrementalSVD(n_components=5).fit(data)
+        assert est.components_.shape == (5, 13)
+        assert isinstance(est.components_, torch.Tensor)
+        scores = est.transform(data)
+        assert scores.shape == (77, 5)
+
+    def test_rpca_godec_torch(self):
+        import torch
+
+        from hyperspy_ml_algorithms import RPCAGoDec
+
+        data = torch.rand(77, 13)
+        est = RPCAGoDec(rank=5).fit(data)
+        assert est.components_.shape == (5, 13)
+        assert isinstance(est.components_, torch.Tensor)
+        scores = est.transform(data)
+        assert scores.shape == (77, 5)
