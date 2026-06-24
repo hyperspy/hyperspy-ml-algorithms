@@ -158,10 +158,10 @@ def _solveproj(v, W, lambda1, kappa, xp, h=None, e=None, vmax=None):
 
         # Stop conditions
         stoph = float(
-            xp.linalg.vector_norm(xp.asarray(h) - xp.asarray(htmp), axis=None)
+            xp.linalg.norm(xp.asarray(h) - xp.asarray(htmp))
         )
         stope = float(
-            xp.linalg.vector_norm(xp.asarray(e) - xp.asarray(etmp), axis=None)
+            xp.linalg.norm(xp.asarray(e) - xp.asarray(etmp))
         )
         stop = max(stoph, stope) / m
         if stop < 1e-5 or iters > maxiter:
