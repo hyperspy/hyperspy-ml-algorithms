@@ -16,6 +16,7 @@
 # You should have received a copy of the GNU General Public License
 # along with HyperSpy. If not, see <https://www.gnu.org/licenses/#GPL>.
 
+import numpy as np
 import pytest
 
 from hyperspy_ml_algorithms import (
@@ -50,25 +51,33 @@ class TestImportability:
         assert cls.__name__ == name, f"Expected {name}, got {cls.__name__}"
 
 
-class TestEstimatorStubs:
-    """Each estimator stub raises NotImplementedError on fit()."""
+class TestEstimatorFit:
+    """All 8 estimators must have working fit() methods."""
 
     @pytest.mark.parametrize(
-        "estimator",
+        "name,cls,kwargs,shape",
         [
-            SVDPCA(n_components=3),
-            MLPCA(n_components=3),
-            ORPCA(n_components=3),
-            RPCAGoDec(rank=3),
-            ORNMF(n_components=3),
-            IncrementalSVD(n_components=3),
-            Orthomax(),
-            Whitening(),
+            ("SVDPCA", SVDPCA, {"n_components": 2}, (12, 5)),
+            ("MLPCA", MLPCA, {"n_components": 2}, (12, 5)),
+            ("ORPCA", ORPCA, {"n_components": 2}, (12, 5)),
+            ("RPCAGoDec", RPCAGoDec, {"rank": 2, "max_iter": 10}, (12, 5)),
+            ("ORNMF", ORNMF, {"n_components": 2}, (12, 5)),
+            ("IncrementalSVD", IncrementalSVD, {"n_components": 2}, (12, 5)),
+            ("Orthomax", Orthomax, {}, (5, 2)),
+            ("Whitening", Whitening, {}, (12, 5)),
         ],
     )
-    def test_fit_raises_not_implemented(self, estimator):
-        import numpy as np
-
-        data = np.random.random((10, 5))
-        with pytest.raises(NotImplementedError, match="Refactor in task"):
-            estimator.fit(data)
+    def test_estimator_fit(self, name, cls, kwargs, shape):
+        """fit() should succeed and return self."""
+        rng = np.random.RandomState(42)
+        if name == "ORNMF":
+            X = rng.rand(*shape)
+        else:
+            X = rng.randn(*shape)
+        estimator = cls(**kwargs)
+        if name == "MLPCA":
+            variance = np.full(shape, 0.01)
+            result = estimator.fit(X, variance)
+        else:
+            result = estimator.fit(X)
+        assert result is estimator, f"{name}.fit() should return self"
