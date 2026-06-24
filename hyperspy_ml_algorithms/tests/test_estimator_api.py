@@ -138,8 +138,8 @@ class TestMLPCAEstimatorAPI:
         variance = data_50_30.copy()
         est = MLPCA(n_components=3)
         est.fit(data_50_30, variance)
-        # MLPCA stores components_ as (n_features, n_components)
-        assert est.components_.shape == (30, 3)
+        # MLPCA stores components_ as (n_components, n_features), like sklearn
+        assert est.components_.shape == (3, 30)
         assert est.singular_values_.shape == (3,)
         assert est.mean_ is None
 

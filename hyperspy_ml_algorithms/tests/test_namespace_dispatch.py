@@ -137,7 +137,7 @@ class TestEstimatorNumpyDispatch:
 
         variance = data.copy()
         est = MLPCA(n_components=5).fit(data, variance)
-        assert est.components_.shape == (13, 5)
+        assert est.components_.shape == (5, 13)
 
     def test_orpca_numpy(self, data):
         from hyperspy_ml_algorithms import ORPCA

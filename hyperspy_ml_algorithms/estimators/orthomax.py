@@ -48,6 +48,11 @@ class Orthomax:
 
     Notes
     -----
+    Orthomax operates on a component matrix, not raw data. The input ``X``
+    must have shape ``(n_features, n_components)``; pass the transpose of
+    components produced by sklearn-style decompositions, e.g.
+    ``Orthomax().fit(pca.components_.T)``.
+
     Adapted from metpy.
     """
 

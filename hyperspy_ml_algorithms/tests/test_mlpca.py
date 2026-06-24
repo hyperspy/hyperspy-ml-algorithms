@@ -43,7 +43,7 @@ def test_mlpca(tol, max_iter):
     est = MLPCA(n_components=rank, tol=tol, max_iter=max_iter).fit(X, varX)
     scores = est.scores_
     S = est.singular_values_
-    X = scores @ est.components_.T
+    X = scores @ est.components_
 
     # Check the low-rank component MSE
     normX = np.linalg.norm(X - X)

@@ -76,7 +76,7 @@ class MLPCA:
 
     Attributes
     ----------
-    components_ : ndarray of shape (n_features, n_components)
+    components_ : ndarray of shape (n_components, n_features)
         Principal axes in feature space, representing the directions of
         maximum variance. Equivalent to the right singular vectors (V).
     singular_values_ : ndarray of shape (n_components,)
@@ -187,10 +187,9 @@ class MLPCA:
             U = V[:output_dimension].T
 
         # Final SVD to obtain components and scores
-        U, S, V = _svd(M, xp)
-        V = V.T
+        U, S, Vt = _svd(M, xp)
 
-        self.components_ = V[:, :output_dimension]
+        self.components_ = Vt[:output_dimension]
         self.singular_values_ = S[:output_dimension]
         self.mean_ = None
         self.scores_ = U[:, :output_dimension] * S[:output_dimension]
@@ -211,7 +210,7 @@ class MLPCA:
             Projection of X onto the components.
         """
         _ = array_namespace(X, self.components_)  # noqa: F841 — namespace dispatch
-        return X @ self.components_
+        return X @ self.components_.T
 
     def fit_transform(self, X, variance):
         """Fit the model and return the scores.

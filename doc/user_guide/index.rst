@@ -138,13 +138,13 @@ noise in electron microscopy)::
     est = MLPCA(n_components=4, tol=1e-8)
     est.fit(data, variance)          # variance required!
     print(f"Scores: {est.scores_.shape}")       # (50, 4)
-    print(f"Components: {est.components_.shape}")  # (30, 4) — transposed!
+    print(f"Components: {est.components_.shape}")  # (4, 30), like sklearn
 
 .. warning::
 
    MLPCA's ``fit()`` requires a second argument ``variance`` (not ``y=None``).
-   The ``components_`` attribute has shape ``(n_features, n_components)`` —
-   the transposed convention compared to sklearn.
+   The ``components_`` attribute follows the sklearn convention, with shape
+   ``(n_components, n_features)``.
 
 ORPCA
 -----
