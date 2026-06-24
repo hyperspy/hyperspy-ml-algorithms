@@ -1,0 +1,81 @@
+[build-system]
+requires = ["setuptools>=64", "setuptools_scm>=8", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+authors = [{name = "The HyperSpy Community"}]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: Matplotlib",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+    "array-api-compat>=1.9",
+    "numpy>=1.25.0",
+    "scipy>=1.10.0",
+]
+description = "Standalone sklearn-like ML algorithms extracted from HyperSpy"
+dynamic = ["version"]
+keywords = ["PCA", "SVD", "NMF", "RPCA", "MLPCA", "machine learning", "decomposition"]
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+name = "hyperspy-ml-algorithms"
+readme = "README.md"
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+all = [
+    "hyperspy-ml-algorithms[dev]",
+    "hyperspy-ml-algorithms[gpu]",
+    "hyperspy-ml-algorithms[sklearn]",
+]
+dev = [
+    "pre-commit",
+    "pytest>=3.6",
+    "ruff",
+]
+gpu = [
+    "cupy-cuda12x",
+    "torch>=2.0",
+]
+sklearn = [
+    "scikit-learn>=1.6.0",
+]
+tests = [
+    "pytest>=3.6",
+]
+
+[project.urls]
+"Bug Reports" = "https://github.com/hyperspy/hyperspy/issues"
+Homepage = "https://hyperspy.org"
+Source = "https://github.com/hyperspy/hyperspy"
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["hyperspy_ml_algorithms/tests"]
+
+[tool.ruff]
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "F",
+    "E",
+    "W",
+    "I",
+]
+extend-ignore = ["E501"]
+
+[tool.setuptools.packages.find]
+include = ["hyperspy_ml_algorithms*"]
+where = ["."]
+
+[tool.setuptools_scm]
+fallback_version = "0.1.0.dev0"

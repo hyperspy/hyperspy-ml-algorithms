@@ -1,0 +1,58 @@
+name: ML Algorithms Tests
+
+on:
+  push:
+    branches-ignore:
+      - 'dependabot/**'
+      - 'pre-commit-ci-update-config'
+  pull_request:
+
+jobs:
+  test:
+    name: ${{ matrix.os }}-py${{ matrix.PYTHON_VERSION }}
+    runs-on: ${{ matrix.os }}-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu, macos, windows]
+        PYTHON_VERSION: ['3.10', '3.11', '3.12']
+
+    defaults:
+      run:
+        working-directory: hyperspy_ml_algorithms
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: actions/setup-python@v6
+        name: Install Python
+        with:
+          python-version: ${{ matrix.PYTHON_VERSION }}
+
+      - name: Display version
+        run: |
+          python --version
+          pip --version
+
+      - name: Install
+        shell: bash
+        run: |
+          pip install --upgrade --prefer-binary -e ".[dev]"
+
+      - name: Pip list
+        run: |
+          pip list
+
+      - name: Run test suite
+        run: |
+          pytest -v --tb=short
+
+      - name: Run lint
+        run: |
+          pip install ruff
+          ruff check .
+          ruff format --check .
