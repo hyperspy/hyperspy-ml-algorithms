@@ -20,9 +20,7 @@ import numpy as np
 import pytest
 import scipy.linalg
 
-from hyperspy.exceptions import VisibleDeprecationWarning
-from hyperspy.learn._rpca import ORPCA, orpca, rpca_godec
-from hyperspy.signals import Signal1D
+from hyperspy_ml_algorithms import ORPCA, RPCAGoDec
 
 
 def compare_norms(a, b, tol=5e-3):
@@ -60,22 +58,23 @@ class TestRPCA:
         self.X = X
 
     def test_default(self):
-        X, E, U, S, V = rpca_godec(self.X, rank=self.rank)
-        compare_norms(X, self.A)
+        est = RPCAGoDec(rank=self.rank).fit(self.X)
+        compare_norms(est.low_rank_, self.A)
 
     @pytest.mark.parametrize("power", [0, 1, 2])
     @pytest.mark.parametrize("maxiter", [1e2, 1e3])
     @pytest.mark.parametrize("tol", [1e-1, 1e-4])
     def test_tol_iter(self, power, maxiter, tol):
-        X, E, U, S, V = rpca_godec(
-            self.X, rank=self.rank, power=power, maxiter=maxiter, tol=tol
+        est = RPCAGoDec(rank=self.rank, power=power, max_iter=maxiter, tol=tol).fit(
+            self.X
         )
-        compare_norms(X, self.A)
+        compare_norms(est.low_rank_, self.A)
 
     def test_regularization(self):
-        X, E, U, S, V = rpca_godec(self.X, rank=self.rank, lambda1=0.01)
-        compare_norms(X, self.A)
+        est = RPCAGoDec(rank=self.rank, lambda1=0.01).fit(self.X)
+        compare_norms(est.low_rank_, self.A)
 
+    @pytest.mark.skip(reason="HyperSpy Signal1D not available in standalone package")
     @pytest.mark.parametrize("poisson", [True, False])
     def test_signal(self, poisson):
         # Note that s1.decomposition() operates on the transpose
@@ -86,7 +85,7 @@ class TestRPCA:
             x -= x.min()
             x[x <= 0] = 1e-16
 
-        s1 = Signal1D(x)
+        s1 = Signal1D(x)  # noqa: F821 — skipped test, hyperspy not available
 
         X, E = s1.decomposition(
             normalize_poissonian_noise=poisson,
@@ -121,102 +120,106 @@ class TestORPCA:
         self.U = U
 
     def test_default(self):
-        X, E, U, S, V = orpca(self.X, rank=self.rank, store_error=True)
-        compare_norms(X, self.A)
+        est = ORPCA(n_components=self.rank, store_error=True).fit(self.X)
+        compare_norms(est.low_rank_, self.A)
 
     def test_project(self):
-        L, R = orpca(self.X, rank=self.rank, project=True)
+        est = ORPCA(n_components=self.rank).fit(self.X.T)
+        L = est.components_.T
+        R = est.transform(self.X.T).T
 
         assert L.shape == (self.m, self.rank)
         assert R.shape == (self.rank, self.n)
 
     def test_batch_size(self):
-        L, R = orpca(self.X, rank=self.rank, batch_size=2)
+        est = ORPCA(n_components=self.rank)
+        est.partial_fit(self.X.T, batch_size=2)
+        L = est.components_.T
+        R = est.transform(self.X.T).T
 
         assert L.shape == (self.m, self.rank)
         assert R.shape == (self.rank, self.n)
 
     def test_method_BCD(self):
-        X, E, U, S, V = orpca(self.X, rank=self.rank, store_error=True, method="BCD")
-        compare_norms(X, self.A)
+        est = ORPCA(n_components=self.rank, store_error=True, method="BCD").fit(self.X)
+        compare_norms(est.low_rank_, self.A)
 
     @pytest.mark.parametrize("subspace_learning_rate", [1.0, 1.1])
     def test_method_SGD(self, subspace_learning_rate):
-        X, E, U, S, V = orpca(
-            self.X,
-            rank=self.rank,
+        est = ORPCA(
+            n_components=self.rank,
             store_error=True,
             method="SGD",
             subspace_learning_rate=subspace_learning_rate,
-        )
-        compare_norms(X, self.A)
+        ).fit(self.X)
+        compare_norms(est.low_rank_, self.A)
 
     @pytest.mark.parametrize("subspace_momentum", [0.5, 0.1])
     def test_method_MomentumSGD(self, subspace_momentum):
-        X, E, U, S, V = orpca(
-            self.X,
-            rank=self.rank,
+        est = ORPCA(
+            n_components=self.rank,
             store_error=True,
             method="MomentumSGD",
             subspace_learning_rate=1.1,
             subspace_momentum=subspace_momentum,
-        )
-        compare_norms(X, self.A)
+        ).fit(self.X)
+        compare_norms(est.low_rank_, self.A)
 
         with pytest.raises(ValueError, match="must be a float between 0 and 1"):
-            _ = orpca(
-                self.X, rank=self.rank, method="MomentumSGD", subspace_momentum=1.9
+            _ = ORPCA(
+                n_components=self.rank,
+                method="MomentumSGD",
+                subspace_momentum=1.9,
             )
 
     def test_init_rand(self):
-        X, E, U, S, V = orpca(self.X, rank=self.rank, store_error=True, init="rand")
-        compare_norms(X, self.A)
+        est = ORPCA(n_components=self.rank, store_error=True, init="rand").fit(self.X)
+        compare_norms(est.low_rank_, self.A)
 
     def test_init_mat(self):
-        X, E, U, S, V = orpca(self.X, rank=self.rank, store_error=True, init=self.U)
-        compare_norms(X, self.A)
+        est = ORPCA(n_components=self.rank, store_error=True, init=self.U).fit(self.X.T)
+        compare_norms(est.low_rank_.T, self.A)
 
-        with pytest.raises(ValueError, match="has to be a two-dimensional matrix"):
+        with pytest.raises(ValueError, match="must be a 2-D matrix"):
             mat = np.zeros(self.m)
-            _ = orpca(self.X, rank=self.rank, init=mat)
+            _ = ORPCA(n_components=self.rank, init=mat).fit(self.X.T)
 
-        with pytest.raises(ValueError, match="has to be of shape"):
+        with pytest.raises(ValueError, match="must have shape"):
             mat = np.zeros((self.m, self.rank - 1))
-            _ = orpca(self.X, rank=self.rank, init=mat)
+            _ = ORPCA(n_components=self.rank, init=mat).fit(self.X.T)
 
     @pytest.mark.parametrize("rank", [3, 11])
     @pytest.mark.parametrize("training_samples", [16, 32])
     def test_training(self, rank, training_samples):
-        X, E, U, S, V = orpca(
-            self.X,
-            rank=rank,
+        est = ORPCA(
+            n_components=rank,
             store_error=True,
             init="qr",
             training_samples=training_samples,
-        )
-        compare_norms(X, self.A)
+        ).fit(self.X)
+        compare_norms(est.low_rank_, self.A)
 
         with pytest.raises(ValueError, match="must be >="):
-            _ = orpca(self.X, rank=self.rank, init="qr", training_samples=self.rank - 1)
+            _ = ORPCA(n_components=self.rank, init="qr", training_samples=self.rank - 1)
 
     def test_regularization(self):
-        X, E, U, S, V = orpca(
-            self.X,
-            rank=self.rank,
+        est = ORPCA(
+            n_components=self.rank,
             store_error=True,
             lambda1=0.01,
             lambda2=0.02,
-        )
-        compare_norms(X, self.A)
+        ).fit(self.X)
+        compare_norms(est.low_rank_, self.A)
 
     def test_exception_method(self):
         with pytest.raises(ValueError, match="'method' not recognised"):
-            _ = orpca(self.X, rank=self.rank, method="uniform")
+            _ = ORPCA(n_components=self.rank, method="uniform")
 
     def test_exception_init(self):
         with pytest.raises(ValueError, match="'init' not recognised"):
-            _ = orpca(self.X, rank=self.rank, init="uniform")
+            _ = ORPCA(n_components=self.rank, init="uniform")
 
+    @pytest.mark.skip(reason="HyperSpy Signal1D not available in standalone package")
     @pytest.mark.parametrize("poisson", [True, False])
     def test_signal(self, poisson):
         # Note that s1.decomposition() operates on the transpose
@@ -227,7 +230,7 @@ class TestORPCA:
             x -= x.min()
             x[x <= 0] = 1e-16
 
-        s1 = Signal1D(x)
+        s1 = Signal1D(x)  # noqa: F821 — skipped test, hyperspy not available
 
         X, E = s1.decomposition(
             normalize_poissonian_noise=poisson,
@@ -289,25 +292,30 @@ class TestORPCASklearnAPI:
         assert obj.components_.shape == (self.rank, self.m)
         assert obj.transform(self.X).shape == (self.n, self.rank)
 
+    @pytest.mark.skip(reason="Deprecated fit() removed in refactor")
     def test_deprecated_fit_warns(self):
         obj = ORPCA(self.rank)
-        with pytest.warns(VisibleDeprecationWarning, match="`fit\\(\\)` is deprecated"):
+        with pytest.warns(VisibleDeprecationWarning, match="`fit\\(\\)` is deprecated"):  # noqa: F821 — skipped test, old API
             obj.fit(self.X)
 
+    @pytest.mark.skip(reason="Deprecated project() removed in refactor")
     def test_deprecated_project_warns(self):
         obj = ORPCA(self.rank)
         obj.partial_fit(self.X)
         with pytest.warns(
-            VisibleDeprecationWarning, match="`project\\(\\)` is deprecated"
+            VisibleDeprecationWarning,  # noqa: F821 — skipped test, old API
+            match="`project\\(\\)` is deprecated",
         ):
             R = obj.project(self.X)
         assert R.shape == (self.rank, self.n)
 
+    @pytest.mark.skip(reason="Deprecated finish() removed in refactor")
     def test_deprecated_finish_warns(self):
         obj = ORPCA(self.rank)
         obj.partial_fit(self.X)
         with pytest.warns(
-            VisibleDeprecationWarning, match="`finish\\(\\)` is deprecated"
+            VisibleDeprecationWarning,  # noqa: F821 — skipped test, old API
+            match="`finish\\(\\)` is deprecated",
         ):
             L, R = obj.finish()
         assert L.shape == (self.m, self.rank)

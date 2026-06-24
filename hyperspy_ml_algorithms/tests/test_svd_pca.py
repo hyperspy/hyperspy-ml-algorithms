@@ -21,7 +21,7 @@ import importlib
 import numpy as np
 import pytest
 
-from hyperspy.learn._svd_pca import svd_pca
+from hyperspy_ml_algorithms import SVDPCA
 
 sklearn = importlib.util.find_spec("sklearn")
 skip_sklearn = pytest.mark.skipif(sklearn is None, reason="sklearn not installed")
@@ -51,18 +51,23 @@ class TestSVDPCA:
 
     @pytest.mark.parametrize("output_dimension", [None, 3])
     @pytest.mark.parametrize("auto_transpose", [True, False])
-    @pytest.mark.parametrize("centre", [None, "signal", "navigation"])
+    @pytest.mark.parametrize("centre", [None, "signal", "features"])
     @pytest.mark.parametrize("u_based_decision", [True, False])
     def test_full(self, output_dimension, auto_transpose, centre, u_based_decision):
-        components, scores, explained_variance, mean = svd_pca(
-            self.X,
-            output_dimension=output_dimension,
+        est = SVDPCA(
+            n_components=output_dimension,
             svd_solver="full",
             auto_transpose=auto_transpose,
             centre=centre,
             u_based_decision=u_based_decision,
-        )
-        X = scores @ components.T
+        ).fit(self.X)
+        components = est.components_
+        scores = est._scores
+        explained_variance = est.explained_variance_
+        mean = est.mean_
+        X = scores @ components
+        if mean is not None:
+            X = X + mean
 
         # Check the low-rank component MSE
         normX = np.linalg.norm(X - self.X)
@@ -74,25 +79,30 @@ class TestSVDPCA:
 
         if centre is None:
             assert mean is None
-        elif centre == "features":
+        elif centre == "signal":
             np.testing.assert_allclose(mean, self.X_mean_1)
-        elif centre == "samples":
+        elif centre == "features":
             np.testing.assert_allclose(mean, self.X_mean_0)
 
     @pytest.mark.parametrize("output_dimension", [None, 3])
     @pytest.mark.parametrize("auto_transpose", [True, False])
-    @pytest.mark.parametrize("centre", [None, "signal", "navigation"])
+    @pytest.mark.parametrize("centre", [None, "signal", "features"])
     @pytest.mark.parametrize("u_based_decision", [True, False])
     def test_arpack(self, output_dimension, auto_transpose, centre, u_based_decision):
-        components, scores, explained_variance, mean = svd_pca(
-            self.X,
-            output_dimension=output_dimension,
+        est = SVDPCA(
+            n_components=output_dimension,
             svd_solver="arpack",
             auto_transpose=auto_transpose,
             centre=centre,
             u_based_decision=u_based_decision,
-        )
-        X = scores @ components.T
+        ).fit(self.X)
+        components = est.components_
+        scores = est._scores
+        explained_variance = est.explained_variance_
+        mean = est.mean_
+        X = scores @ components
+        if mean is not None:
+            X = X + mean
 
         # Check the low-rank component MSE
         normX = np.linalg.norm(X - self.X)
@@ -105,16 +115,21 @@ class TestSVDPCA:
     @skip_sklearn
     @pytest.mark.parametrize("output_dimension", [None, 3])
     @pytest.mark.parametrize("auto_transpose", [True, False])
-    @pytest.mark.parametrize("centre", [None, "signal", "navigation"])
+    @pytest.mark.parametrize("centre", [None, "signal", "features"])
     def test_randomized(self, output_dimension, auto_transpose, centre):
-        components, scores, explained_variance, mean = svd_pca(
-            self.X,
-            output_dimension=output_dimension,
+        est = SVDPCA(
+            n_components=output_dimension,
             svd_solver="randomized",
             auto_transpose=auto_transpose,
             centre=centre,
-        )
-        X = scores @ components.T
+        ).fit(self.X)
+        components = est.components_
+        scores = est._scores
+        explained_variance = est.explained_variance_
+        mean = est.mean_
+        X = scores @ components
+        if mean is not None:
+            X = X + mean
 
         # Check the low-rank component MSE
         normX = np.linalg.norm(X - self.X)
@@ -130,8 +145,10 @@ class TestSVDPCA:
         U = self.rng.randn(100, 5)
         V = self.rng.randn(100, 5)
         X = U @ V.T
-        components, scores, _, _ = svd_pca(X, output_dimension=5, svd_solver="auto")
-        Y = scores @ components.T
+        est = SVDPCA(n_components=5, svd_solver="auto").fit(X)
+        components = est.components_
+        scores = est._scores
+        Y = scores @ components
         normX = np.linalg.norm(X - Y)
         assert normX < self.tol
 
@@ -139,8 +156,10 @@ class TestSVDPCA:
         U = self.rng.randn(501, 5)
         V = self.rng.randn(100, 5)
         X = U @ V.T
-        components, scores, _, _ = svd_pca(X, output_dimension=5, svd_solver="auto")
-        Y = scores @ components.T
+        est = SVDPCA(n_components=5, svd_solver="auto").fit(X)
+        components = est.components_
+        scores = est._scores
+        Y = scores @ components
         normX = np.linalg.norm(X - Y)
         assert normX < self.tol
 
@@ -148,8 +167,10 @@ class TestSVDPCA:
         U = self.rng.randn(501, 5)
         V = self.rng.randn(100, 5)
         X = U @ V.T
-        components, scores, _, _ = svd_pca(X, output_dimension=81, svd_solver="auto")
-        Y = scores @ components.T
+        est = SVDPCA(n_components=81, svd_solver="auto").fit(X)
+        components = est.components_
+        scores = est._scores
+        Y = scores @ components
         normX = np.linalg.norm(X - Y)
         assert normX < self.tol
 
@@ -158,10 +179,10 @@ class TestSVDPCA:
         with pytest.raises(
             ValueError, match="requires output_dimension to be strictly"
         ):
-            _ = svd_pca(
-                self.X, output_dimension=min(self.X.shape) + 1, svd_solver="arpack"
+            _ = SVDPCA(n_components=min(self.X.shape) + 1, svd_solver="arpack").fit(
+                self.X
             )
 
     def test_centre_error(self):
         with pytest.raises(ValueError, match="'centre' must be one of"):
-            _ = svd_pca(self.X, centre="random")
+            _ = SVDPCA(centre="random").fit(self.X)

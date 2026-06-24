@@ -19,9 +19,7 @@
 import numpy as np
 import pytest
 
-from hyperspy.exceptions import VisibleDeprecationWarning
-from hyperspy.learn._ornmf import ORNMF, ornmf
-from hyperspy.signals import Signal1D
+from hyperspy_ml_algorithms import ORNMF
 
 
 def compare_norms(a, b, tol=5e-3):
@@ -63,66 +61,93 @@ class TestRNMF:
 
     @pytest.mark.parametrize("project", [True, False])
     def test_default(self, project):
-        W, H = ornmf(self.X, self.rank, project=project)
+        est = ORNMF(n_components=self.rank).fit(self.X.T)
+        W = est.components_.T
+        H = est.scores_.T
         compare_norms(W @ H, self.X)
 
         assert W.shape == self.U.shape
         assert H.shape == self.V.T.shape
 
     def test_batch_size(self):
-        W, H = ornmf(self.X, self.rank, batch_size=2)
+        est = ORNMF(n_components=self.rank)
+        est.partial_fit(self.X.T, batch_size=2)
+        W = est.components_.T
+        # scores_ not populated by partial_fit; compute via transform
+        H = est.transform(self.X.T).T
         compare_norms(W @ H, self.X)
 
         assert W.shape == self.U.shape
         assert H.shape == self.V.T.shape
 
+    @pytest.mark.skip(
+        reason="store_error return values not exposed in new estimator API"
+    )
     def test_store_error(self):
-        Xhat, Ehat, W, H = ornmf(self.X, self.rank, store_error=True)
+        Xhat, Ehat, W, H = ornmf(self.X, self.rank, store_error=True)  # noqa: F821 — skipped test, old API
         compare_norms(Xhat, self.X)
 
         assert Xhat.shape == self.X.shape
         assert Ehat.shape == self.E.shape
 
     def test_corrupted_default(self):
-        W, H = ornmf(self.Y, self.rank)
+        est = ORNMF(n_components=self.rank).fit(self.Y.T)
+        W = est.components_.T
+        H = est.scores_.T
         compare_norms(W @ H, self.X)
 
     def test_robust(self):
-        W, H = ornmf(self.X, self.rank, method="RobustPGD")
+        est = ORNMF(n_components=self.rank, method="RobustPGD").fit(self.X.T)
+        W = est.components_.T
+        H = est.scores_.T
         compare_norms(W @ H, self.X)
 
     def test_corrupted_robust(self):
-        W, H = ornmf(self.Y, self.rank, method="RobustPGD")
+        est = ORNMF(n_components=self.rank, method="RobustPGD").fit(self.Y.T)
+        W = est.components_.T
+        H = est.scores_.T
         compare_norms(W @ H, self.X)
 
     def test_no_method(self):
         with pytest.raises(ValueError, match="'method' not recognised"):
-            _ = ornmf(self.X, self.rank, method="uniform")
+            _ = ORNMF(n_components=self.rank, method="uniform")
 
     def test_subspace_tracking(self):
-        W, H = ornmf(self.X, self.rank, method="MomentumSGD")
+        est = ORNMF(n_components=self.rank, method="MomentumSGD").fit(self.X.T)
+        W = est.components_.T
+        H = est.scores_.T
         compare_norms(W @ H, self.X)
 
     @pytest.mark.parametrize("subspace_learning_rate", [1.0, 1.1])
     def test_subspace_tracking_learning_rate(self, subspace_learning_rate):
-        W, H = ornmf(
-            self.X,
-            self.rank,
+        est = ORNMF(
+            n_components=self.rank,
             method="MomentumSGD",
             subspace_learning_rate=subspace_learning_rate,
-        )
+        ).fit(self.X.T)
+        W = est.components_.T
+        H = est.scores_.T
         compare_norms(W @ H, self.X)
 
     @pytest.mark.parametrize("subspace_momentum", [0.5, 0.9])
     def test_subspace_tracking_momentum(self, subspace_momentum):
-        W, H = ornmf(
-            self.X, self.rank, method="MomentumSGD", subspace_momentum=subspace_momentum
-        )
+        est = ORNMF(
+            n_components=self.rank,
+            method="MomentumSGD",
+            subspace_momentum=subspace_momentum,
+        ).fit(self.X.T)
+        W = est.components_.T
+        H = est.scores_.T
         compare_norms(W @ H, self.X)
 
         with pytest.raises(ValueError, match="must be a float between 0 and 1"):
-            _ = ornmf(self.X, self.rank, method="MomentumSGD", subspace_momentum=1.9)
+            _ = ORNMF(
+                n_components=self.rank,
+                method="MomentumSGD",
+                subspace_momentum=1.9,
+            )
 
+    @pytest.mark.skip(reason="HyperSpy Signal1D not available in standalone package")
     @pytest.mark.parametrize("poisson", [True, False])
     def test_signal(self, poisson):
         # Note that s1.decomposition() operates on the transpose
@@ -133,7 +158,7 @@ class TestRNMF:
             x -= x.min()
             x[x <= 0] = 1e-16
 
-        s1 = Signal1D(x)
+        s1 = Signal1D(x)  # noqa: F821 — skipped test, hyperspy not available
 
         X_out, E_out = s1.decomposition(
             normalize_poissonian_noise=poisson,
@@ -195,25 +220,30 @@ class TestORNMFSklearnAPI:
         assert obj.components_.shape == (self.rank, self.m)
         assert obj.transform(self.X).shape == (self.n, self.rank)
 
+    @pytest.mark.skip(reason="Deprecated fit() removed in refactor")
     def test_deprecated_fit_warns(self):
         obj = ORNMF(self.rank)
-        with pytest.warns(VisibleDeprecationWarning, match="`fit\\(\\)` is deprecated"):
+        with pytest.warns(VisibleDeprecationWarning, match="`fit\\(\\)` is deprecated"):  # noqa: F821 — skipped test, old API
             obj.fit(self.X)
 
+    @pytest.mark.skip(reason="Deprecated project() removed in refactor")
     def test_deprecated_project_warns(self):
         obj = ORNMF(self.rank)
         obj.partial_fit(self.X)
         with pytest.warns(
-            VisibleDeprecationWarning, match="`project\\(\\)` is deprecated"
+            VisibleDeprecationWarning,  # noqa: F821 — skipped test, old API
+            match="`project\\(\\)` is deprecated",
         ):
             H = obj.project(self.X)
         assert H.shape == (self.rank, self.n)
 
+    @pytest.mark.skip(reason="Deprecated finish() removed in refactor")
     def test_deprecated_finish_warns(self):
         obj = ORNMF(self.rank)
         obj.partial_fit(self.X)
         with pytest.warns(
-            VisibleDeprecationWarning, match="`finish\\(\\)` is deprecated"
+            VisibleDeprecationWarning,  # noqa: F821 — skipped test, old API
+            match="`finish\\(\\)` is deprecated",
         ):
             W, H = obj.finish()
         assert W.shape == (self.m, self.rank)
@@ -224,11 +254,11 @@ class TestORNMFNegativeMean:
 
     def test_setup_with_negative_mean_does_not_produce_nan(self):
         """_setup should produce finite W even when data has negative mean."""
-        from hyperspy.learn._ornmf import ORNMF
+        from hyperspy_ml_algorithms import ORNMF
 
         rng = np.random.default_rng(42)
         X = rng.random((13, 25)) - 15.0  # negative mean ~ -2.5
-        obj = ORNMF(rank=3, random_state=1)
+        obj = ORNMF(n_components=3, random_state=1)
         obj._setup(X)
         assert np.all(np.isfinite(obj.W))
         assert obj.W.shape[1] == 3
@@ -239,14 +269,14 @@ class TestORNMFIteratorSetup:
 
     def test_setup_with_iterator_uses_abs(self):
         """_setup should use abs() when X is an iterator (not ndarray)."""
-        from hyperspy.learn._ornmf import ORNMF
+        from hyperspy_ml_algorithms import ORNMF
 
         rng = np.random.default_rng(42)
         X = rng.random((13, 7))
         # Make mean negative so abs() matters
         X = X - 2.0
         # Pass as generator to trigger iterator path
-        obj = ORNMF(rank=3, random_state=1)
+        obj = ORNMF(n_components=3, random_state=1)
         gen = (row for row in X)
         obj._setup(gen)
         assert np.all(np.isfinite(obj.W))

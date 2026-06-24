@@ -29,7 +29,7 @@ import pytest
 
 pytest.importorskip("sklearn", reason="scikit-learn is required for ISVD tests")
 
-from hyperspy.learn.incremental_svd import ISVD
+from hyperspy_ml_algorithms import IncrementalSVD as ISVD
 
 
 class TestISVDNoCentering:
