@@ -16,6 +16,8 @@
 # You should have received a copy of the GNU General Public License
 # along with HyperSpy. If not, see <https://www.gnu.org/licenses/#GPL>.
 """
+
+# ruff: noqa: F822
 Stub estimator classes for hyperspy-ml-algorithms.
 
 Each class raises ``NotImplementedError`` in ``fit()``.
@@ -24,10 +26,13 @@ No HyperSpy dependencies — only NumPy used for type hints.
 """
 
 __all__ = [
+    "IncrementalSVD",
+    "ORNMF",
     "ORPCA",
     "Orthomax",
     "RPCAGoDec",
     "SVDPCA",
+    "Whitening",
 ]
 
 
@@ -87,6 +92,47 @@ class RPCAGoDec:
         raise NotImplementedError("Refactor in task 5")
 
 
+class ORNMF:
+    """Online Robust NMF estimator — stub for Task 6."""
+
+    def __init__(self, n_components=None, batch_size=20, max_iter=100):
+        self.n_components = n_components
+        self.batch_size = batch_size
+        self.max_iter = max_iter
+
+    def fit(self, X, y=None):
+        raise NotImplementedError("Refactor in task 6")
+
+    def transform(self, X):
+        raise NotImplementedError("Refactor in task 6")
+
+    def fit_transform(self, X, y=None):
+        raise NotImplementedError("Refactor in task 6")
+
+    def partial_fit(self, X_chunk):
+        raise NotImplementedError("Refactor in task 6")
+
+
+class IncrementalSVD:
+    """Incremental/streaming SVD estimator — stub for Task 7."""
+
+    def __init__(self, n_components=None, num_chunks=None):
+        self.n_components = n_components
+        self.num_chunks = num_chunks
+
+    def fit(self, X, y=None):
+        raise NotImplementedError("Refactor in task 7")
+
+    def transform(self, X):
+        raise NotImplementedError("Refactor in task 7")
+
+    def fit_transform(self, X, y=None):
+        raise NotImplementedError("Refactor in task 7")
+
+    def partial_fit(self, X_chunk):
+        raise NotImplementedError("Refactor in task 7")
+
+
 class Orthomax:
     """Orthomax / varimax factor rotation — stub for Task 8."""
 
@@ -103,3 +149,20 @@ class Orthomax:
 
     def fit_transform(self, X, y=None):
         raise NotImplementedError("Refactor in task 8")
+
+
+class Whitening:
+    """ZCA/PCA whitening transformer — stub for Task 9."""
+
+    def __init__(self, method="PCA", centre=True):
+        self.method = method
+        self.centre = centre
+
+    def fit(self, X, y=None):
+        raise NotImplementedError("Refactor in task 9")
+
+    def transform(self, X):
+        raise NotImplementedError("Refactor in task 9")
+
+    def fit_transform(self, X, y=None):
+        raise NotImplementedError("Refactor in task 9")
