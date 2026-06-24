@@ -157,12 +157,8 @@ def _solveproj(v, W, lambda1, kappa, xp, h=None, e=None, vmax=None):
         e = np.asarray(_thresh(v - W_xp @ xp.asarray(h), lambda1, vmax, xp))
 
         # Stop conditions
-        stoph = float(
-            xp.linalg.norm(xp.asarray(h) - xp.asarray(htmp))
-        )
-        stope = float(
-            xp.linalg.norm(xp.asarray(e) - xp.asarray(etmp))
-        )
+        stoph = float(xp.linalg.norm(xp.asarray(h) - xp.asarray(htmp)))
+        stope = float(xp.linalg.norm(xp.asarray(e) - xp.asarray(etmp)))
         stop = max(stoph, stope) / m
         if stop < 1e-5 or iters > maxiter:
             break
