@@ -35,6 +35,13 @@ all = [
     "hyperspy-ml-algorithms[gpu]",
     "hyperspy-ml-algorithms[sklearn]",
 ]
+doc = [
+    "numpydoc",
+    "pydata_sphinx_theme",
+    "sphinx>=7.0",
+    "sphinx-copybutton",
+    "sphinx-design",
+]
 dev = [
     "pre-commit",
     "pytest>=3.6",

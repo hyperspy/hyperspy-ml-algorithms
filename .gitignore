@@ -16,3 +16,6 @@ __pycache__/
 
 # Lint
 .ruff_cache/
+
+# Doc build artifacts
+doc/_build/
