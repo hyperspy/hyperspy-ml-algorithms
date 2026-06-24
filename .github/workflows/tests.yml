@@ -1,4 +1,4 @@
-name: ML Algorithms Tests
+name: Tests
 
 on:
   push:
@@ -9,34 +9,59 @@ on:
 
 jobs:
   test:
-    name: ${{ matrix.os }}-py${{ matrix.PYTHON_VERSION }}
+    name: ${{ matrix.os }}-py${{ matrix.PYTHON_VERSION }}${{ matrix.LABEL }}
     runs-on: ${{ matrix.os }}-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu, macos, windows]
-        PYTHON_VERSION: ['3.10', '3.11', '3.12']
+        PYTHON_VERSION: ['3.10', '3.11', '3.12', '3.13']
+        include:
+          - os: ubuntu
+            PYTHON_VERSION: '3.10'
+            LABEL: -oldest
+            OLDEST_SUPPORTED_VERSION: true
+            DEPENDENCIES: numpy==1.25.0 scipy==1.10.0
 
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          fetch-tags: true
 
       - uses: actions/setup-python@v6
+        name: Install Python
         with:
           python-version: ${{ matrix.PYTHON_VERSION }}
+
+      - name: Display version
+        run: |
+          python --version
+          pip --version
 
       - name: Install
         shell: bash
         run: |
           pip install --upgrade -e ".[dev,sklearn]"
 
-      - name: Run tests
+      - name: Install oldest supported version
+        if: ${{ matrix.OLDEST_SUPPORTED_VERSION }}
+        run: |
+          pip install ${{ matrix.DEPENDENCIES }}
+
+      - name: Pip list
+        run: |
+          pip list
+
+      - name: Run test suite
         run: |
           pytest hyperspy_ml_algorithms/tests/ -v --tb=short --cov=hyperspy_ml_algorithms --cov-report=xml
 
-      - uses: codecov/codecov-action@v3
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Lint
         run: |
