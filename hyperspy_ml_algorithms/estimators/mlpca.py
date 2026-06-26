@@ -72,7 +72,15 @@ class MLPCA:
     max_iter : int, default=50000
         Maximum number of iterations before exiting without convergence.
     tol : float, default=1e-10
-        Tolerance of the stopping condition.
+        Relative tolerance of the stopping condition.  When the objective
+        function values are very small (near machine epsilon), the
+        `abs_tol` threshold takes precedence.
+    abs_tol : float, default=1e-12
+        Absolute tolerance.  If the objective function ``s_obj`` drops
+        below this value, convergence is declared immediately regardless
+        of the relative criterion.  This prevents the algorithm from
+        running unnecessary iterations when the residual is already
+        negligible.
 
     Attributes
     ----------
@@ -107,10 +115,11 @@ class MLPCA:
     (50, 3)
     """
 
-    def __init__(self, n_components=None, max_iter=50000, tol=1e-10):
+    def __init__(self, n_components=None, max_iter=50000, tol=1e-10, abs_tol=1e-12):
         self.n_components = n_components
         self.max_iter = max_iter
         self.tol = tol
+        self.abs_tol = abs_tol
 
     def fit(self, X, variance):
         """Fit the MLPCA model to the data.
@@ -140,19 +149,18 @@ class MLPCA:
 
         _logger.info("Performing maximum likelihood principal components analysis")
 
-        # Generate initial estimates via SVD of covariance matrix
+        # Generate initial estimates via SVD of data directly
+        # (equivalent to eigenvectors of X @ X.T but avoids forming the
+        # (m, m) covariance matrix when m >> n)
         _logger.info("Generating initial estimates")
         X_centered = X - xp.mean(X, axis=1, keepdims=True)
-        cov_X = (X_centered @ X_centered.T) / (n - 1)
-        U, _, _ = _svd(cov_X, xp)
+        U, _, _ = _svd(X_centered, xp)
         U = U[:, :output_dimension]
 
         s_old = 0.0
 
         # Placeholders
-        F = xp.empty((m, n))
         M = xp.zeros((m, n))
-        Uq = xp.zeros((output_dimension, m))
 
         # Loop for alternating least squares
         _logger.info("Optimization iteration loop")
@@ -161,13 +169,17 @@ class MLPCA:
 
             for i in range(n):
                 Uq = U.T * inv_v[:, i]
-                F = xp.linalg.inv(Uq @ U)
-                M[:, i] = U @ F @ Uq @ X[:, i]
+                # Solve (Uq @ U) z = Uq @ x  instead of inv(Uq @ U) @ Uq @ x
+                M[:, i] = U @ xp.linalg.solve(Uq @ U, Uq @ X[:, i])
                 dx = X[:, i] - M[:, i]
                 s_obj += (dx * inv_v[:, i]) @ dx.T
 
             # Every second iteration, check the stop criterion
             if itr > 0 and itr % 2 == 0:
+                # Absolute tolerance: if objective is near-zero, we have converged
+                if s_obj < self.abs_tol:
+                    _logger.info(f"Iteration: {itr // 2}, s_obj={s_obj:.2e} < abs_tol, converged")
+                    break
                 stop_criterion = abs(s_old - s_obj) / s_obj
                 _logger.info(f"Iteration: {itr // 2}, convergence: {stop_criterion}")
 
@@ -180,7 +192,6 @@ class MLPCA:
 
             X = X.T
             inv_v = inv_v.T
-            F = F.T
             M = M.T
 
             m, n = X.shape
